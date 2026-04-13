@@ -4,21 +4,24 @@ Trajectory conditioning tracer — Streamlit UI.
 Run: ``uv run streamlit run streamlit_app.py``
 
 Loads ``[b,t,a,c]`` trajectories, draws per-agent strokes on a court image,
-saves ``conditioning_idx{K}_traj.npy`` and ``conditioning_idx{K}_mask.npy``.
+saves under ``outputs/idx{K}_{timestamp}/``:
+``conditioning_idx{K}_traj.npy``, ``conditioning_idx{K}_mask.npy``, and ``preview.jpg``.
 """
 
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
 import streamlit as st
 from PIL import Image
-from streamlit_drawable_canvas import st_canvas
 
 from utils.canvas_extract import ordered_stroke_from_canvas
+from utils.canvas_streamlit import gameplay_st_canvas
 from utils.court_image import render_for_canvas
 from utils.drawing import render_conditioning_preview, render_scene_to_rgb
+from utils.streamlit_data_url import np_rgb_to_jpeg_data_url
 from utils.resample import NUM_AGENTS, build_traj_and_mask, validate_trajectory_array
 
 # Custom components default to a ~700px-wide iframe; wider pixel canvases are clipped.
@@ -39,6 +42,11 @@ def _wrap_mapper_uv_scale(inner: object, sx: float, sy: float) -> object:
             return inner.batch(uvs)
 
     return _Scaled()
+
+
+def _on_active_agent_changed() -> None:
+    """Remount drawable canvas so Fabric state resets without Python↔Fabric JSON round-trips."""
+    st.session_state.canvas_rev = int(st.session_state.canvas_rev) + 1
 
 
 def _canvas_for_iframe(pil_bg: Image.Image) -> tuple[Image.Image, int, int, object]:
@@ -135,7 +143,13 @@ def main() -> None:
 
         st.divider()
         st.subheader("Drawing")
-        agent_i = st.selectbox("Active agent", range(NUM_AGENTS), format_func=lambda i: AGENT_LABELS[i])
+        agent_i = st.selectbox(
+            "Active agent",
+            range(NUM_AGENTS),
+            format_func=lambda i: AGENT_LABELS[i],
+            key="active_agent_pick",
+            on_change=_on_active_agent_changed,
+        )
         if st.button("Clear stroke for this agent"):
             st.session_state.strokes.pop(agent_i, None)
             st.session_state.canvas_rev += 1
@@ -162,11 +176,21 @@ def main() -> None:
                 traj, mask = build_traj_and_mask(gt0, st.session_state.strokes)
                 od = Path(out_dir)
                 od.mkdir(parents=True, exist_ok=True)
+                ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+                run_dir = od / f"idx{idx}_{ts}"
+                run_dir.mkdir(parents=True, exist_ok=False)
                 stem = f"conditioning_idx{idx}"
-                np.save(od / f"{stem}_traj.npy", traj)
-                np.save(od / f"{stem}_mask.npy", mask)
-                st.session_state.preview_rgb = render_conditioning_preview(traj, mask)
-                st.toast(f"Saved {stem}_traj.npy and _mask.npy", icon="✅")
+                np.save(run_dir / f"{stem}_traj.npy", traj)
+                np.save(run_dir / f"{stem}_mask.npy", mask)
+                preview_rgb = render_conditioning_preview(traj, mask)
+                st.session_state.preview_rgb = preview_rgb
+                Image.fromarray(preview_rgb).save(
+                    run_dir / "preview.jpg", format="JPEG", quality=92
+                )
+                st.toast(
+                    f"Saved to {run_dir.relative_to(od)}/ ({stem}_*.npy, preview.jpg)",
+                    icon="✅",
+                )
 
     col_draw, col_ref, col_prev = st.columns([2.35, 1.0, 1.0])
 
@@ -179,7 +203,7 @@ def main() -> None:
     gt0 = data[idx, 0, :, :2].astype(np.float32)
     traj_xy = data[idx, :, :, :2].astype(np.float32)
 
-    extra = {a: s for a, s in st.session_state.strokes.items() if a != agent_i}
+    extra = dict(st.session_state.strokes)
     pil_bg, _res, mapper = render_for_canvas(
         gt0,
         extra_paths=extra,
@@ -188,6 +212,7 @@ def main() -> None:
     w_full, h_full = pil_bg.size
     pil_canvas, w, h, (sx, sy) = _canvas_for_iframe(pil_bg)
     mapper = _wrap_mapper_uv_scale(mapper, sx, sy)
+    _canvas_key = f"canvas_{st.session_state.canvas_rev}"
 
     with col_draw:
         st.subheader("Draw conditioning")
@@ -200,17 +225,18 @@ def main() -> None:
             )
         )
         st.caption(cap)
-        canvas_result = st_canvas(
+        canvas_result = gameplay_st_canvas(
             fill_color="rgba(255, 165, 0, 0.2)",
             stroke_width=3,
             stroke_color="#e62020",
             background_image=pil_canvas,
+            media_coordinate_key=_canvas_key,
             update_streamlit=True,
             height=h,
             width=w,
             drawing_mode="freedraw",
             display_toolbar=True,
-            key=f"canvas_{st.session_state.canvas_rev}_{agent_i}",
+            key=_canvas_key,
         )
 
         if st.button("Apply stroke to active agent", key="apply_btn"):
@@ -227,14 +253,20 @@ def main() -> None:
         st.subheader("Ground truth (reference)")
         try:
             ref_rgb = render_scene_to_rgb(traj_xy)
-            st.image(ref_rgb, use_column_width=True)
+            st.image(
+                np_rgb_to_jpeg_data_url(ref_rgb, quality=88),
+                use_column_width=True,
+            )
         except Exception as e:
             st.error(str(e))
 
     with col_prev:
         st.subheader("Preview (saved conditioning)")
         if st.session_state.preview_rgb is not None:
-            st.image(st.session_state.preview_rgb, use_column_width=True)
+            st.image(
+                np_rgb_to_jpeg_data_url(st.session_state.preview_rgb, quality=88),
+                use_column_width=True,
+            )
         else:
             st.info("Click **Preview** or **Save** in the sidebar to render the 30-step conditioning.")
 

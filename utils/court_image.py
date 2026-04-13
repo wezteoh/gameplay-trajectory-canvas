@@ -91,6 +91,23 @@ def render_for_canvas(
             )
         )
 
+    if highlight_agent is not None:
+        hp = extra_paths.get(highlight_agent)
+        if hp is not None:
+            pts = np.asarray(hp, dtype=float)
+            if pts.ndim == 2 and pts.shape[0] >= 2 and pts.shape[1] == 2:
+                c = _agent_color(highlight_agent)
+                ax.add_line(
+                    Line2D(
+                        pts[:, 0],
+                        pts[:, 1],
+                        color=c,
+                        linewidth=2.6,
+                        alpha=0.92,
+                        zorder=3,
+                    )
+                )
+
     for i in range(NUM_AGENTS):
         c = _agent_color(i)
         z = 5 if i == 10 else 4
