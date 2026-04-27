@@ -32,6 +32,6 @@ uv run streamlit run streamlit_app.py
 
 3. Pick **Batch index**, choose an **Active agent**, draw on the court, **Apply stroke**, repeat for other agents as needed.
 
-4. **Preview** or **Save .npy files** — writes `conditioning_idx{K}_traj.npy` and `conditioning_idx{K}_mask.npy` under the chosen output directory. Row `t=0` is always ground truth with mask 1; traced agents get 30 arc-length-resampled steps with mask 1; untraced agents stay zero for `t≥1` with mask 0 there.
+4. **Preview** or **Save .npy files** — writes `traj.npy` and `mask.npy` under the chosen output directory. Row `t=0` is always ground truth with mask 1; traced agents get 30 arc-length-resampled steps with mask 1; untraced agents stay zero for `t≥1` with mask 0 there.
 
 The repo ships an example path `data/nba_test.npy` in the UI default; add that file (or your own) under `data/` if you want the default to work out of the box.

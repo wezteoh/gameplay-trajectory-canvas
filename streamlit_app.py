@@ -5,7 +5,7 @@ Run: ``uv run streamlit run streamlit_app.py``
 
 Loads ``[b,t,a,c]`` trajectories, draws per-agent strokes on a court image,
 saves under ``outputs/idx{K}_{timestamp}/``:
-``conditioning_idx{K}_traj.npy``, ``conditioning_idx{K}_mask.npy``, and ``preview.jpg``.
+``traj.npy``, ``mask.npy``, and ``preview.jpg``.
 """
 
 from __future__ import annotations
@@ -179,16 +179,15 @@ def main() -> None:
                 ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
                 run_dir = od / f"idx{idx}_{ts}"
                 run_dir.mkdir(parents=True, exist_ok=False)
-                stem = f"conditioning_idx{idx}"
-                np.save(run_dir / f"{stem}_traj.npy", traj)
-                np.save(run_dir / f"{stem}_mask.npy", mask)
+                np.save(run_dir / "traj.npy", traj)
+                np.save(run_dir / "mask.npy", mask)
                 preview_rgb = render_conditioning_preview(traj, mask)
                 st.session_state.preview_rgb = preview_rgb
                 Image.fromarray(preview_rgb).save(
                     run_dir / "preview.jpg", format="JPEG", quality=92
                 )
                 st.toast(
-                    f"Saved to {run_dir.relative_to(od)}/ ({stem}_*.npy, preview.jpg)",
+                    f"Saved to {run_dir.relative_to(od)}/ (traj.npy, mask.npy, preview.jpg)",
                     icon="✅",
                 )
 
